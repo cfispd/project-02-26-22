@@ -1,0 +1,178 @@
+
+% Number of Robots aNodeNum Rows, Columns of the grid
+
+number_robot(N):- N=#count{I:init(object(robot,I),value(at,pair(X,Y)))}.
+number_row(N):- N=#count{X:init(object(node,I),value(at,pair(X,Y)))}.
+number_column(N):- N=#count{Y:init(object(node,I),value(at,pair(X,Y)))}.
+number_node(N) :- N=#count{I:init(object(node,I),value(at,pair(X,Y)))}.
+number_pickingStation(N):- N=#count{I:init(object(pickingStation,I),value(at,pair(X,Y)))}.
+
+% Location
+
+pair(X,Y):- init(object(node,NodeNum),value(at,pair(X,Y))).
+node(NodeNum):- init(object(node,NodeNum),value(at,pair(X,Y))).
+nodeLocation(NodeNum,pair(X,Y)):- init(object(node,NodeNum),value(at,pair(X,Y))).
+
+highway(NodeNum):- init(object(highway,NodeNum),value(at,pair(X,Y))).
+
+pickingStationCondition(PSNum,NodeNum):- init(object(pickingStation,PSNum),value(at,pair(X,Y))), init(object(node,NodeNum),value(at,pair(X,Y))).
+pickingStation(PSNum):- init(object(pickingStation,PSNum),value(at,pair(X,Y))), init(object(node,NodeNum),value(at,pair(X,Y))).
+
+robotCondition(RNum,object(node,NodeNum),0):- init(object(robot,RNum),value(at,pair(X,Y))), nodeLocation(NodeNum,pair(X,Y)).
+robot(RNum):- init(object(robot,RNum),value(at,pair(X,Y))).
+
+shelfCondition(SNum,object(node,NodeNum),0):- init(object(shelf,SNum),value(at,pair(X,Y))), nodeLocation(NodeNum,pair(X,Y)).
+shelf(SNum):- init(object(shelf,SNum),value(at,pair(X,Y))).
+
+productCondition(PNum,object(shelf,SNum),with(quantity,PQ),0):- init(object(product,PNum),value(on,pair(SNum,PQ))).
+product(PNum):- init(object(product,PNum),value(on,pair(SNum,PQ))).
+
+orderCondition(ONum,object(node,NodeNum),contains(PNum,PQ),0):- init(object(order,ONum),value(pickingStation,PSNum)), pickingStationCondition(PSNum,NodeNum), init(object(order,ONum),value(line,pair(PNum,PQ))).
+order(ONum):- init(object(order,ONum),value(pickingStation,PSNum)).
+
+
+
+% Move directions
+move(0,1;0,-1;-1,0;1,0).
+
+{robotMove(R,move(DX,DY),T):move(DX,DY)}1:- R=1..NR, number_robot(NR), T=0..n-1.
+{pickUpShelf(R,SNum,T):shelf(SNum)}1:- R=1..NR, number_robot(NR), T=0..TN,TN=n-1.
+{putDownShelf(R,SNum,T):shelf(SNum)}1:- R=1..NR, number_robot(NR), T=0..TN,TN=n-1.
+{deliver(R,ONum,with(SNum,PR,DQ),T):orderCondition(ONum,object(node,NodeNum),contains(PR,OQ),T), productCondition(PR,object(shelf,SNum),with(quantity,PQ),T), DQ=1..PQ}1:- R=1..NR, number_robot(NR), T=0..n-1.
+
+%converting them to the necessary output
+occurs(object(robot,R),move(DX,DY),T):-robotMove(R,move(DX,DY),T).
+occurs(object(robot,R),pickup,T):-pickUpShelf(R,_,T).
+occurs(object(robot,R),putdown,T):-putDownShelf(R,_,T).
+occurs(object(robot,R),deliver(ONum,PNum,DQ),T):-deliver(R,ONum,with(SNum,PNum,DQ),T).
+
+
+
+%ONSTRAINTS
+
+% Two actions cannot occur at the same time
+:- occurs(object(robot,R),A1,T), occurs(object(robot,R),A2,T), A1!=A2.
+
+% ROBOT
+% Robot cannot move outSNumde of the grid
+:- robotCondition(RNum,object(node,NodeNum),T), robotMove(R,move(DX,DY),T), nodeLocation(NodeNum,pair(X,Y)), X+DX<1.
+:- robotCondition(RNum,object(node,NodeNum),T), robotMove(R,move(DX,DY),T), nodeLocation(NodeNum,pair(X,Y)), Y+DY<1.
+:- robotCondition(RNum,object(node,NodeNum),T), robotMove(R,move(DX,DY),T), nodeLocation(NodeNum,pair(X,Y)), X+DX>N, number_row(N).
+:- robotCondition(RNum,object(node,NodeNum),T), robotMove(R,move(DX,DY),T), nodeLocation(NodeNum,pair(X,Y)), Y+DY>N, number_column(N).
+
+% No robot on 2 nodes
+:- 2{robotCondition(R,object(node,NodeNum),T):node(NodeNum)}, robot(R), T=0..n.
+
+% No 2 robots on the same node
+:- 2{robotCondition(R,object(node,NodeNum),T):robot(R)}, node(NodeNum), T=0..n.
+
+%:- robotCondition(R1,object(node,NodeNum1),T), robotCondition(R1,object(node,NodeNum2),T+1), robotCondition(R2,object(node,NodeNum2),T), robotCondition(R2,object(node,NodeNum1),T+1), R1!=R2.
+
+
+
+%SHELF
+
+% robot can pick up the shelf
+:- pickUpShelf(RNum,S,T), shelfCondition(S,object(node,NodeNum),T), not robotCondition(RNum,object(node,NodeNum),T). 
+
+% 2 robots cannot pickup one self at the same time
+:- 2{pickUpShelf(R,S,T): robot(R)}, shelf(S).
+
+% A robot cannot pickup a shelf when the shelf is already on a robot
+:- pickUpShelf(R1,S,T), shelfCondition(S,object(robot,R2),T).
+
+% A robot cannot pickup when robot already has one shelf.
+:- pickUpShelf(RNum,S1,T), shelfCondition(S2,object(robot,RNum),T).
+
+% A shelf cant be putDown by 2 robots
+:- 2{putDownShelf(R,S,T): robot(R)}, shelf(S).
+
+% A robot can put down a shelf only if it has one.
+:- putDownShelf(RNum,S,T), not shelfCondition(S,object(robot,RNum),T).
+
+% A robot cannot putdown a shelf on a highway
+:- putDownShelf(RNum,S,T), robotCondition(RNum,object(node,NodeNum),T), highway(NodeNum). 
+
+% No shelf on 2 robots
+:- 2{shelfCondition(S,object(robot,NR),T): robot(NR)}, shelf(S), T=0..n.
+
+% No 2 shelves on the same robot
+:- 2{shelfCondition(S,object(robot,NR),T): shelf(S)}, robot(NR), T=0..n.
+
+% No shelf on 2 positions & No 2 shelves on the same node
+:- 2{shelfCondition(S,object(node,NodeNum),T): node(NodeNum)}, shelf(S), T=0..n.
+:- shelfCondition(S,object(node,X),T), shelfCondition(S,object(robot,_),T),X=1..N,number_node(N).
+:- 2{shelfCondition(S,object(node,NodeNum),T): shelf(S)}, node(NodeNum), T=0..n.
+
+
+
+%DELIVER%
+
+% Robot can deliver when robot is on picking station
+:- deliver(R,ONum,with(_,PR,_),T), orderCondition(ONum,object(node,NodeNum),contains(PR,_),T), not robotCondition(R,object(node, NodeNum),T).
+
+% Robot can only deliver if robot has the shelf containing product
+:- deliver(R,ONum,with(SNum,PR,_),T), productCondition(PR,object(shelf,SNum),with(quantity,_),T), not shelfCondition(SNum,object(robot,R),T).
+
+% Robot cannot deliver more quantities than the order.
+:- deliver(R,ONum,with(SNum,PR,DQ),T), orderCondition(ONum,object(node,NodeNum),contains(PR,OQ),T), DQ>OQ.
+
+% Robot cannot deliver more quantities than the product in the shelf.
+:- deliver(R,ONum,with(SNum,PR,DQ),T), productCondition(PR,object(shelf,SNum),with(quantity,PQ),T), DQ>PQ.
+
+
+%Highway%
+
+% Picking Station cannot be a highway
+:- pickingStationCondition(PSNum,NodeNum), highway(NodeNum), PSNum=1..N, number_pickingStation(N).
+
+% Shelf cannot be on a highway.
+:- shelfCondition(S,object(node,NodeNum),T), highway(NodeNum), T=0..n-1.
+
+
+
+
+
+%ACTIONf
+
+% Robot Moving
+robotCondition(R,object(node,NEW_NodeNum),T+1):- robotCondition(R,object(node,NodeNum),T), nodeLocation(NodeNum,pair(X,Y)), nodeLocation(NEW_NodeNum, pair(X+DX,Y+DY)), robotMove(R,move(DX,DY),T).
+
+% Picking up a shelf
+shelfCondition(S,object(robot,RNum),T+1):- pickUpShelf(RNum,S,T), shelfCondition(S,object(node,NodeNum),T), robotCondition(RNum,object(node,NodeNum),T).
+
+%Putting down a shelf
+shelfCondition(S,object(node,NodeNum),T+1):- putDownShelf(RNum,S,T), shelfCondition(S,object(robot,RNum),T), robotCondition(RNum,object(node,NodeNum),T).
+
+%DeliveRNumng a product
+orderCondition(ONum,object(node,NodeNum),contains(PR,OU-DQ),T+1):- deliver(R,ONum,with(SNum,PR,DQ),T), orderCondition(ONum,object(node,NodeNum),contains(PR,OU),T).
+productCondition(PR,object(shelf,SNum),with(quantity,PQ-DQ),T+1):- deliver(R,ONum,with(SNum,PR,DQ),T), productCondition(PR,object(shelf,SNum),with(quantity,PQ),T).
+
+
+
+% LAW OF INERTIA
+
+% Robot
+{robotCondition(R,object(node,NodeNum),T+1)}:- robotCondition(R,object(node,NodeNum),T), T=0..n-1.
+
+% Shelf
+{shelfCondition(S,object(node,NodeNum),T+1)}:-shelfCondition(S,object(node,NodeNum),T),T=0..n-1.
+{shelfCondition(S,object(robot,RNum),T+1)}:-shelfCondition(S,object(robot,RNum),T),T=0..n-1.
+
+% Order
+{orderCondition(ONum,object(node,NodeNum),contains(PR,OU),T+1)}:- orderCondition(ONum,object(node,NodeNum),contains(PR,OU),T), productCondition(PR,object(shelf,SNum),with(quantity,PQ),T), T=0..n-1.
+
+% Product
+{productCondition(PR,object(shelf,SNum),with(quantity,PQ),T+1)}:- productCondition(PR,object(shelf,SNum),with(quantity,PQ),T), T=0..n-1.
+
+
+% Final goal
+:- not orderCondition(ONum,object(node,NN),contains(PR,0),n), orderCondition(ONum,object(node,NN),contains(PR,X),0),NN=1..N,number_node(N).
+
+steps(N):-N=#sum{1,O,A,T:occurs(O,A,T)}.
+rouNodeNums(N):-N=#count{T:occurs(O,A,T)}.
+#minimize{1,O,A,T:occurs(O,A,T)}.
+
+#show occurs/3.
+#show steps/1.
+#show rouNodeNums/1.
